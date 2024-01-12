@@ -7,7 +7,7 @@ module:
 dependencies:
   - com.squareup:kotlinpoet:1.15.3
   - com.anyascii:anyascii:0.3.2
-  - com.github.ajalt.clikt:clikt:4.2.1
+  - com.github.ajalt.clikt:clikt:4.2.2
 
 settings:
   kotlin:

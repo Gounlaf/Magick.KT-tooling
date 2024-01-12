@@ -6,3 +6,7 @@ repositories {
 }
 
 application.mainClass = "imagemagick.MainKt"
+
+tasks.getByName<Sync>("installDist").let {
+    it.destinationDir = file("${System.getProperty("user.home")}/.local/magick-kt-tooling")
+}
