@@ -25,12 +25,26 @@ class RoughlyTranslateCsharpTest : CliktCommand() {
                 val (contextName) = it.destructured
                 """context("$contextName")"""
             }
+            .replace("""Assert\.Throws<(.*)>\((.*), \(\) => (.*)\);""".toRegex()) {
+                val (type, _, test) = it.destructured
+
+                """shouldThrow<${type}>{
+                    ${test}
+                }""".trimMargin()
+            }
+            .replace("""Assert\.Throws<(.*)>\((.*), \(\) =>\n {1,}\{\n {1,}(.*)\n {1,}\}\);""".toRegex()) {
+                val (type, _, test) = it.destructured
+
+                """shouldThrow<${type}>{
+                    ${test.trimMargin()}
+                }""".trimMargin()
+            }
             .replace("""public void Should(.*)\(\)""".toRegex()) {
                 val (methodName) = it.destructured
 
                 "should(\"${methodName.camelToSnakeCase().replace('_', ' ')}\")"
             }
-            .replace("""Assert.(False|True)\((.*)\);""".toRegex()) {
+            .replace("""Assert\.(False|True)\((.*)\);""".toRegex()) {
                 val (boolStr, assertion) = it.destructured
 
                 val actual = assertion.trim()
@@ -40,7 +54,7 @@ class RoughlyTranslateCsharpTest : CliktCommand() {
 
                 "${actual} shouldBe ${boolStr.lowercase()}"
             }
-            .replace("""Assert.Equal\((.*),(.*)\);""".toRegex()) {
+            .replace("""Assert\.Equal\((.*?),(.*?)\);""".toRegex()) {
                 val (expected, actualRaw) = it.destructured
 
                 val actual = actualRaw.trim()
@@ -50,7 +64,7 @@ class RoughlyTranslateCsharpTest : CliktCommand() {
 
                 "${actual} shouldBe ${expected.trim()}"
             }
-            .replace("""Assert.NotEqual\((.*),(.*)\);""".toRegex()) {
+            .replace("""Assert\.NotEqual\((.*?),(.*?)\);""".toRegex()) {
                 val (expected, actualRaw) = it.destructured
 
                 val actual = actualRaw.trim()
@@ -60,7 +74,7 @@ class RoughlyTranslateCsharpTest : CliktCommand() {
 
                 "${actual} shouldNotBe ${expected.trim()}"
             }
-            .replace("""Assert.Null\((.*)\);""".toRegex()) {
+            .replace("""Assert\.Null\((.*)\);""".toRegex()) {
                 val (actualRaw) = it.destructured
 
                 val actual = actualRaw.trim()
@@ -70,7 +84,7 @@ class RoughlyTranslateCsharpTest : CliktCommand() {
 
                 "${actual} shouldBe null"
             }
-            .replace("""Assert.NotNull\((.*)\);""".toRegex()) {
+            .replace("""Assert\.NotNull\((.*)\);""".toRegex()) {
                 val (actualRaw) = it.destructured
 
                 val actual = actualRaw.trim()
@@ -80,7 +94,7 @@ class RoughlyTranslateCsharpTest : CliktCommand() {
 
                 "${actual} shouldNotBe null"
             }
-                .replace("""Assert.InRange\((.*), (.*), (.*)\);""".toRegex()) {
+                .replace("""Assert\.InRange\((.*), (.*), (.*)\);""".toRegex()) {
                 val (actualRaw, from, to) = it.destructured
 
                 val actual = actualRaw.trim()
@@ -90,13 +104,9 @@ class RoughlyTranslateCsharpTest : CliktCommand() {
 
                 "${actual} shouldBeIn ${from}..${to}"
             }
-            .replace("""Assert.Throws<(.*)>\("(.*)", \(\) =>""".toRegex()) {
-                val (type, _) = it.destructured
-
-                "shouldThrow<${type}> {"
-            }
             .replace("var", "val")
             .replace("Quantum.Max", "Quantum.max")
+            .replace("ArgumentException", "IllegalArgumentException")
             .filterNot { c -> c == ';' }
 
         outputFile?.let {

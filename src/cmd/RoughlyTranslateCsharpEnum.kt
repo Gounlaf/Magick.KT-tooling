@@ -24,9 +24,24 @@ class RoughlyTranslateCsharpEnum : CliktCommand() {
                 .replace(""" {4}/// <summary>\n {4}/// (.+)\n {4}/// </summary>\n {4}([^/]+)\n""".toRegex()) {
                     val (summary, enum) = it.destructured
                     """    /** $summary */
-    ${enum.camelToSnakeCase().uppercase()}
+    $enum
 """
                 }
+
+                .replace(""" {4}/// <summary>""".toRegex()) {
+                    """    /**"""
+                }
+                .replace(""" {4}/// </summary>""".toRegex()) {
+                    """    */"""
+                }
+                .replace(""" {4}///""".toRegex()) {
+                    """    *"""
+                }
+                .replace(""" {4}(.+),\n""".toRegex()) {
+                    val (enum) = it.destructured
+                    """    ${enum.camelToSnakeCase().uppercase()},"""
+                }
+                .replace(" enum ", " enum class ")
 
         outputFile?.let {
             it.outputStream().writer(Charsets.UTF_8).use { osw ->
