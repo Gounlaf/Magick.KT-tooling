@@ -122,8 +122,7 @@ class UpdateCinteropDependencies : CliktCommand() {
 
     private val httpClient by lazy {
         HttpClient(CIO) {
-            install(HttpTimeout) {
-            }
+            install(HttpTimeout)
             install(ContentNegotiation) {
                 json(json = Json { ignoreUnknownKeys = true })
             }
@@ -252,7 +251,7 @@ class UpdateCinteropDependencies : CliktCommand() {
         }
 
         val extractDirTmp = createTempDirectory()
-        val assetFile = createTempFile(
+        val appImageFile = createTempFile(
             directory = extractDirTmp, prefix = null, suffix = ".AppImage", PosixFilePermissions.asFileAttribute(
                 setOf(
                     PosixFilePermission.OWNER_EXECUTE,
@@ -261,19 +260,20 @@ class UpdateCinteropDependencies : CliktCommand() {
                 )
             )
         )
-        downloadFile(asset.browserDownloadUrl, 5.minutes, assetFile, asset.browserDownloadUrl)
-
+        downloadFile(asset.browserDownloadUrl, 5.minutes, appImageFile, asset.browserDownloadUrl)
 
         // AppImage are 7z compatible, but Apache Commons Compress doesn't recognize header
         // -> need to extract AppImage via subprocess
 
         t.info("extracting AppImage")
-        Command(assetFile.absolutePathString())
+        Command(appImageFile.absolutePathString())
             .arg("--appimage-extract")
             .cwd(extractDirTmp.absolutePathString())
             .stdout(Stdio.Null)
             .spawn()
             .wait()
+
+        // extract only compiled library
 
         extractDirTmp.visitFileTree {
             onVisitFile { file, _ ->
@@ -281,12 +281,16 @@ class UpdateCinteropDependencies : CliktCommand() {
 
                 when {
                     entry.contains("/usr/include/ImageMagick-7") && entry.endsWith(".h") -> {
-                        Path(
-                            includeDir.absolutePathString(),
-                            entry.substringAfter("/usr/include/")
-                        ).let { dst ->
-                            dst.parent.createDirectories()
-                            file.copyTo(dst)
+                        when {
+                            entry.endsWith("baseconfig.h") || entry.endsWith("version.h") -> {
+                                Path(
+                                    includeDir.absolutePathString(),
+                                    entry.substringAfter("/usr/include/")
+                                ).let { dst ->
+                                    dst.parent.createDirectories()
+                                    file.copyTo(dst)
+                                }
+                            }
                         }
                     }
 
@@ -306,6 +310,49 @@ class UpdateCinteropDependencies : CliktCommand() {
         }
 
         extractDirTmp.deleteRecursively()
+
+        // need to download sources to get all .h files (-private are not included)
+
+        val sourcesUrl = "https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${release.name}.zip"
+
+        val sourcesFile = createTempFile(suffix = ".zip")
+        downloadFile(sourcesUrl, 5.minutes, sourcesFile, sourcesUrl)
+
+        sourcesFile.let {
+            it.inputStream().buffered().use { inputStream ->
+                val factory = ArchiveStreamFactory()
+
+                factory.createArchiveInputStream<ZipArchiveInputStream>(inputStream).use { zipArchiveInputStream ->
+                    var entry = zipArchiveInputStream.nextEntry
+                    while (entry != null) {
+                        when {
+                            entry.name.contains("MagickCore") && entry.name.endsWith(".h") -> {
+                                includeDir / "ImageMagick-7/MagickCore" / entry.name.substringAfter("MagickCore/")
+                            }
+
+                            entry.name.contains("MagickWand") && entry.name.endsWith(".h") -> {
+                                includeDir / "ImageMagick-7/MagickWand" / entry.name.substringAfter("MagickWand/")
+                            }
+
+                            entry.name.contains("coders") && entry.name.endsWith("-private.h") -> {
+                                includeDir / "ImageMagick-7/coders" / entry.name.substringAfter("coders/")
+                            }
+
+                            else -> null
+                        }?.let { dst ->
+                            dst.parent.createDirectories()
+                            dst.outputStream().use { outputStream ->
+                                zipArchiveInputStream.copyTo(outputStream)
+                            }
+                        }
+
+                        entry = zipArchiveInputStream.nextEntry
+                    }
+                }
+            }
+
+            it.deleteExisting()
+        }
 
         t.success("Magick.Native sources files extracted")
     }
@@ -479,7 +526,7 @@ suspend fun HttpClient.downloadFile(
     destination: Path,
     progress: CoroutineProgressTaskAnimator<Unit>,
 ) {
-    this.prepareGet(url) {
+    prepareGet(url) {
         timeout {
             requestTimeoutMillis = timeout.inWholeMilliseconds
         }
