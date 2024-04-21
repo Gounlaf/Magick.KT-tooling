@@ -53,6 +53,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
 import kotlin.io.path.deleteExisting
 import kotlin.io.path.deleteRecursively
+import kotlin.io.path.div
 import kotlin.io.path.inputStream
 import kotlin.io.path.outputStream
 import kotlin.io.path.visitFileTree
@@ -102,12 +103,16 @@ class UpdateCinteropDependencies : CliktCommand() {
     private val githubPassword by option(valueSourceKey = "githubPassword").required()
     private val outputDir by argument().file(mustExist = false, canBeFile = false).help("outputDir.")
 
+    private val parent by lazy {
+        Path(outputDir.absolutePath, "magick-kt-native-q8/src/nativeInterop/cinterop")
+    }
+
     private val libDir by lazy {
-        Path(outputDir.absolutePath, "magick-kt-native-q8/src/nativeInterop/cinterop/lib")
+        parent / "lib"
     }
 
     private val includeDir by lazy {
-        Path(outputDir.absolutePath, "magick-kt-native-q8/src/nativeInterop/cinterop/include")
+        parent / "include"
     }
 
     private val githubClient by lazy {
@@ -134,6 +139,7 @@ class UpdateCinteropDependencies : CliktCommand() {
 
     private val t = Terminal()
 
+    @OptIn(ExperimentalPathApi::class)
     override fun run() {
         if (!outputDir.exists() && !outputDir.mkdirs()) {
             t.danger("Failed to create output dir ${outputDir.absolutePath}")
@@ -162,6 +168,35 @@ class UpdateCinteropDependencies : CliktCommand() {
         runBlocking {
             // Extract ImageMagick files
             extractImageMagickFiles(imageMagickRelease)
+        }
+
+        val fileList = mutableListOf<String>()
+
+        // Generate .def file
+        (includeDir / "Magick.Native").visitFileTree {
+            onVisitFile { file, _ ->
+                if (file.absolutePathString().endsWith(".h")) {
+                    fileList.add("Magick.Native/${file.absolutePathString().substringAfter("Magick.Native/")}")
+                }
+
+                FileVisitResult.CONTINUE
+            }
+        }
+
+        val defFile = parent / "libMagickNative.def"
+
+        fileList.takeUnless { it.isEmpty() }?.let { list ->
+            list.sort()
+
+            defFile.outputStream().bufferedWriter().use { writer ->
+                list.removeFirst().let { writer.append("headers = $it \\").appendLine() }
+
+                val last = list.removeLast()
+
+                list.forEach { writer.append("    $it \\").appendLine() }
+
+                writer.append("    $last").appendLine()
+            }
         }
     }
 
