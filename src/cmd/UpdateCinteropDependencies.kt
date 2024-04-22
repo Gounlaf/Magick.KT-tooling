@@ -187,6 +187,10 @@ class UpdateCinteropDependencies : CliktCommand() {
         fileList.takeUnless { it.isEmpty() }?.let { list ->
             list.sort()
 
+            val stdafx = list.first { it.endsWith("Stdafx.h") }
+            list.remove(stdafx)
+            list.addFirst(stdafx)
+
             defFile.outputStream().bufferedWriter().use { writer ->
                 list.removeFirst().let { writer.append("headers = $it \\").appendLine() }
 
